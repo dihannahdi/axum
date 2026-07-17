@@ -412,6 +412,26 @@ fn parse_path(path: &LitStr) -> syn::Result<Vec<Segment>> {
                     if !inner.is_empty() && !inner.starts_with('{') && !inner.ends_with('}') {
                         let capture = inner.strip_prefix('*').unwrap_or(inner);
 
+                        // A path segment may contain at most one capture. Reject a second one
+                        // (e.g. `/files/{name}.{ext}`) rather than silently dropping it, which
+                        // would make the router path and the Display impl disagree.
+                        if let Some(next_open) = suffix.find('{') {
+                            if let Some(next_close_off) = suffix[next_open..].find('}') {
+                                let next_close = next_open + next_close_off;
+                                let next_inner = &suffix[next_open + 1..next_close];
+                                if !next_inner.is_empty()
+                                    && !next_inner.starts_with('{')
+                                    && !next_inner.ends_with('}')
+                                {
+                                    return Err(syn::Error::new(
+                                        path.span(),
+                                        "a path segment may contain at most one capture: the router allows only \
+                                         one parameter per path segment (e.g. `{a}.{b}` is not supported)",
+                                    ));
+                                }
+                            }
+                        }
+
                         if prefix.is_empty() && suffix.is_empty() {
                             return Ok(Segment::Capture(capture.to_owned(), path.span()));
                         } else {
